@@ -54,3 +54,13 @@ app:
   continuous_listening: true
   response_prefix: ""  # Optional prefix for responses (e.g., "Assistant: ")
 
+# Laptop backend (FaceTimeOS) settings
+laptop:
+  host: "10.12.131.3"     # IP or hostname of your Mac running FaceTimeOS backend
+  port: 8000              # SERVER_PORT from FaceTimeOS/backend environment
+  timeout_seconds: 60
+
+# External APIs
+apis:
+  serper_api_key: "bfa79311accc72d42cbb42cbe6f2fe7ef09857d9"  # Serper API key for search/news/weather
+

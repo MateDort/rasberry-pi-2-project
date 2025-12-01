@@ -20,6 +20,10 @@ from audio.output_handler import AudioOutputHandler
 from stt.speech_to_text import SpeechToText
 from llm.llama_inference import LlamaInference
 from utils.bluetooth_setup import BluetoothSetup
+from utils.intent_classifier import classify_intent, IntentType
+from utils.serper_client import SerperClient, format_search_response, format_news_response, format_weather_response
+from utils.laptop_client import LaptopBackendConfig, send_laptop_task, download_screenshot
+import uuid
 
 
 class VoiceAssistant:
@@ -35,6 +39,8 @@ class VoiceAssistant:
         self.audio_output = None
         self.stt = None
         self.llm = None
+        self.serper = None
+        self.laptop_config = None
         
         self.running = False
         
@@ -187,18 +193,148 @@ class VoiceAssistant:
             bluetooth_device=bluetooth_config.get('device_mac')
         )
         
+        # Initialize Serper client for search/news/weather
+        apis_config = self.config.get('apis', {})
+        serper_key = apis_config.get('serper_api_key') or os.getenv('SERPER_API_KEY')
+        if serper_key:
+            self.serper = SerperClient(api_key=serper_key)
+            logging.info("Serper client initialized")
+        else:
+            logging.warning("Serper API key not found - search/news/weather features disabled")
+            self.serper = None
+        
+        # Initialize laptop backend config
+        laptop_config = self.config.get('laptop', {})
+        if laptop_config.get('host'):
+            self.laptop_config = LaptopBackendConfig.from_config(self.config)
+            logging.info(f"Laptop backend configured: {self.laptop_config.base_url}")
+        else:
+            logging.warning("Laptop backend not configured - laptop tasks disabled")
+            self.laptop_config = None
+        
         logging.info("All components initialized")
     
     def _process_question(self, question: str) -> str:
-        """Process a question through the LLM and return response."""
+        """
+        Process a question by classifying intent and routing to appropriate handler.
+        
+        Returns:
+            Response text to speak, or None if no response
+        """
         if not question or not question.strip():
             return None
         
         logging.info(f"Processing question: {question}")
         
-        # Generate response
-        response = self.llm.generate(question)
+        # Classify intent
+        intent, confidence = classify_intent(question)
+        logging.info(f"Classified intent: {intent} (confidence: {confidence:.2f})")
         
+        # Route to appropriate handler
+        if intent == "laptop_action":
+            return self._handle_laptop_action(question)
+        elif intent == "weather":
+            return self._handle_weather(question)
+        elif intent == "news":
+            return self._handle_news(question)
+        elif intent == "search":
+            return self._handle_search(question)
+        else:  # local_qa
+            return self._handle_local_qa(question)
+    
+    def _handle_laptop_action(self, question: str) -> str:
+        """Handle laptop GUI automation tasks."""
+        if not self.laptop_config:
+            return "Laptop backend is not configured. Please set laptop host and port in config.yaml."
+        
+        logging.info(f"Sending laptop task: {question}")
+        
+        try:
+            task_id = str(uuid.uuid4())
+            result = send_laptop_task(
+                self.laptop_config,
+                task_id=task_id,
+                user_text=question,
+                mode="gui_task",
+                options={"send_screenshot": True},
+            )
+            
+            if result["status"] == "done":
+                message = result.get("message", "Task completed")
+                screenshot_url = result.get("screenshot_url")
+                
+                # Optionally download screenshot (for future display)
+                if screenshot_url:
+                    screenshot_dir = Path("./screenshots")
+                    screenshot_path = download_screenshot(screenshot_url, screenshot_dir)
+                    if screenshot_path:
+                        logging.info(f"Screenshot saved to {screenshot_path}")
+                
+                return f"Task completed: {message}"
+            else:
+                error_msg = result.get("message", "Unknown error")
+                return f"Sorry, the laptop task failed: {error_msg}"
+                
+        except Exception as e:
+            logging.error(f"Error handling laptop action: {e}", exc_info=True)
+            return f"Sorry, I couldn't send that task to your laptop: {str(e)}"
+    
+    def _handle_weather(self, question: str) -> str:
+        """Handle weather queries using Serper API."""
+        if not self.serper:
+            return "Weather search is not available. Please configure SERPER_API_KEY."
+        
+        # Extract location from question (simple: look for "in [location]" or "for [location]")
+        location = "current location"  # Default
+        question_lower = question.lower()
+        
+        # Try to extract location
+        for phrase in ["in ", "for ", "at "]:
+            if phrase in question_lower:
+                parts = question_lower.split(phrase, 1)
+                if len(parts) > 1:
+                    location = parts[1].strip()
+                    # Remove trailing punctuation
+                    location = location.rstrip(".,!?")
+                    break
+        
+        logging.info(f"Searching weather for: {location}")
+        result = self.serper.search_weather(location)
+        return format_weather_response(result)
+    
+    def _handle_news(self, question: str) -> str:
+        """Handle news queries using Serper API."""
+        if not self.serper:
+            return "News search is not available. Please configure SERPER_API_KEY."
+        
+        # Extract topic from question
+        topic = question
+        # Remove common news-related words to get the actual topic
+        for word in ["news", "headlines", "latest", "recent", "about"]:
+            topic = topic.replace(word, "").strip()
+        
+        logging.info(f"Searching news for: {topic}")
+        result = self.serper.search_news(topic or "general news")
+        return format_news_response(result)
+    
+    def _handle_search(self, question: str) -> str:
+        """Handle general search queries using Serper API."""
+        if not self.serper:
+            return "Search is not available. Please configure SERPER_API_KEY."
+        
+        # Clean up the query (remove "search for", "look up", etc.)
+        query = question
+        for phrase in ["search for", "look up", "find", "google", "what is", "who is", "where is"]:
+            query = query.replace(phrase, "").strip()
+        
+        logging.info(f"Searching: {query}")
+        result = self.serper.search(query, num_results=2)
+        return format_search_response(result)
+    
+    def _handle_local_qa(self, question: str) -> str:
+        """Handle general questions using local LLM."""
+        logging.info("Using local LLM for question")
+        response = self.llm.generate(question)
         return response
     
     def run(self):
