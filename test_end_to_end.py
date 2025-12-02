@@ -18,69 +18,29 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 from utils.intent_classifier import classify_intent
-from utils.serper_client import SerperClient, format_search_response, format_news_response, format_weather_response
 from utils.laptop_client import LaptopBackendConfig, send_laptop_task
 
 
 def test_intent_classification():
     """Test intent classification."""
     print("\n=== Testing Intent Classification ===")
+    print("Note: Without LLM, uses fallback heuristics")
     
     test_cases = [
         ("open Safari and go to google.com", "laptop_action"),
-        ("what's the weather in New York", "weather"),
-        ("latest news about AI", "news"),
-        ("search for Python tutorials", "search"),
+        ("go to blackboard life university and login", "laptop_action"),
+        ("text my girlfriend that song", "laptop_action"),
         ("what is the capital of France", "local_qa"),
+        ("what time is it", "local_qa"),
     ]
     
     for text, expected in test_cases:
-        intent, confidence = classify_intent(text)
+        intent, confidence = classify_intent(text, llm=None)  # No LLM, uses fallback
         status = "✓" if intent == expected else "✗"
         print(f"{status} '{text}' → {intent} (confidence: {confidence:.2f}, expected: {expected})")
 
 
-def test_serper_integration():
-    """Test Serper API integration."""
-    print("\n=== Testing Serper API Integration ===")
-    
-    # Load config
-    with open("config.yaml") as f:
-        config = yaml.safe_load(f)
-    
-    serper_key = config.get("apis", {}).get("serper_api_key")
-    if not serper_key:
-        print("⚠️  SERPER_API_KEY not configured - skipping Serper tests")
-        return
-    
-    serper = SerperClient(api_key=serper_key)
-    
-    # Test search
-    print("\n1. Testing search...")
-    result = serper.search("Python programming", num_results=2)
-    if "error" not in result:
-        response = format_search_response(result)
-        print(f"   Response: {response[:200]}...")
-    else:
-        print(f"   Error: {result['error']}")
-    
-    # Test news
-    print("\n2. Testing news...")
-    result = serper.search_news("technology")
-    if "error" not in result:
-        response = format_news_response(result)
-        print(f"   Response: {response[:200]}...")
-    else:
-        print(f"   Error: {result['error']}")
-    
-    # Test weather
-    print("\n3. Testing weather...")
-    result = serper.search_weather("San Francisco")
-    if "error" not in result:
-        response = format_weather_response(result)
-        print(f"   Response: {response}")
-    else:
-        print(f"   Error: {result['error']}")
+# Serper integration removed - using LLM for all classification
 
 
 def test_laptop_task():
@@ -120,7 +80,6 @@ def main():
     
     try:
         test_intent_classification()
-        test_serper_integration()
         test_laptop_task()
         
         print("\n" + "=" * 50)

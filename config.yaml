@@ -56,9 +56,9 @@ app:
 
 # Laptop backend (FaceTimeOS) settings
 laptop:
-  host: "10.12.131.3"     # IP or hostname of your Mac running FaceTimeOS backend
+  host: "localhost"       # Use "localhost" for Mac testing, "10.12.131.3" for Pi
   port: 8000              # SERVER_PORT from FaceTimeOS/backend environment
-  timeout_seconds: 60
+  timeout_seconds: 60    # Client timeout - backend will fail fast if Agent-S is stuck
 
 # External APIs
 apis:

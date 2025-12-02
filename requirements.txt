@@ -19,6 +19,9 @@ webrtcvad==2.0.10
 # Configuration
 pyyaml==6.0.1
 
+# HTTP Requests (for laptop client and Serper API)
+requests>=2.31.0
+
 # Utilities
 colorlog==6.7.0
 

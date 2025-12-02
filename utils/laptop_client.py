@@ -64,9 +64,13 @@ def send_laptop_task(
 
     url = f"{backend_cfg.base_url}/pi_task"
     logger.info("Sending laptop task to %s: %s", url, payload)
+    print(f"📤 Sending task to backend (timeout: {backend_cfg.timeout_seconds}s)...")
 
     try:
+        # Use a longer timeout with progress indication
+        print(f"   Waiting for response (max {backend_cfg.timeout_seconds}s)...")
         response = requests.post(url, json=payload, timeout=backend_cfg.timeout_seconds)
+        print(f"✅ Received response from backend: status={response.status_code}, size={len(response.content)} bytes")
     except requests.RequestException as exc:
         logger.error("Failed to reach laptop backend: %s", exc, exc_info=True)
         return {

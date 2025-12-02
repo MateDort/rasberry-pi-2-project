@@ -91,7 +91,8 @@ class LlamaInference:
         self,
         question: str,
         system_prompt: Optional[str] = None,
-        stream: bool = False
+        stream: bool = False,
+        max_tokens: Optional[int] = None
     ) -> str:
         """
         Generate response to a question.
@@ -100,6 +101,7 @@ class LlamaInference:
             question: User's question
             system_prompt: Optional system prompt
             stream: Whether to stream the response (not implemented yet)
+            max_tokens: Override default max_tokens for this call
             
         Returns:
             Generated response text
@@ -109,9 +111,12 @@ class LlamaInference:
             
             logger.debug(f"Generating response for: {question[:50]}...")
             
+            # Use provided max_tokens or default
+            tokens_to_generate = max_tokens if max_tokens is not None else self.max_tokens
+            
             response = self.llm(
                 prompt,
-                max_tokens=self.max_tokens,
+                max_tokens=tokens_to_generate,
                 temperature=self.temperature,
                 top_p=self.top_p,
                 repeat_penalty=self.repeat_penalty,

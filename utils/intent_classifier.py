@@ -1,107 +1,125 @@
 """
-Simple intent classifier for routing user requests.
+LLM-based intent classifier for routing user requests.
 
-Uses rule-based keyword matching to classify intents:
-- laptop_action: Tasks that require GUI automation on the Mac
-- weather: Weather queries
-- news: News queries
-- search: General search queries
-- local_qa: General questions answered by local LLM
+Uses local LLM to intelligently decide if a task requires GUI automation on the Mac
+or can be handled locally on the Pi.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Literal, Tuple
+from typing import Literal, Tuple, Optional
 
 logger = logging.getLogger(__name__)
 
-# Intent type
-IntentType = Literal["laptop_action", "weather", "news", "search", "local_qa"]
+# Intent type - simplified to just two options
+IntentType = Literal["laptop_action", "local_qa"]
+
+# System prompt for intent classification
+INTENT_CLASSIFICATION_PROMPT = """You are an intent classifier for a voice assistant system.
+
+The user has a Raspberry Pi voice assistant that can:
+- Answer questions locally using its own LLM
+- Delegate complex GUI tasks to a Mac computer via Agent-S
+
+Your job is to determine if the user's request requires GUI automation on the Mac (laptop_action) or can be answered locally (local_qa).
+
+A task requires laptop_action if it involves:
+- Opening applications, websites, or files
+- Clicking, typing, or interacting with GUI elements
+- Multi-step workflows that require visual interaction
+- Accessing files/apps on the Mac (like Notes app, Messages, etc.)
+- Complex tasks like "go to website X and login", "text someone", "open app and do Y"
+- Any task that requires seeing the screen and interacting with it
+
+A task can be local_qa if it:
+- Is a simple question that can be answered with knowledge
+- Doesn't require opening apps or interacting with GUI
+- Can be answered with information alone
+
+Examples:
+- "go to blackboard life university and login" → laptop_action (requires opening browser, navigating, typing)
+- "text my girlfriend that song I sent to my brother" → laptop_action (requires opening Messages, finding contacts, sending)
+- "what is the weather" → local_qa (can be answered with information)
+- "what is Python" → local_qa (knowledge question)
+- "open Safari" → laptop_action (requires opening application)
+- "what time is it" → local_qa (can be answered locally)
+
+Respond with ONLY one word: "laptop_action" or "local_qa"
+Do not include any explanation, just the intent type."""
 
 
-# Keywords for laptop actions (GUI tasks on Mac)
-LAPTOP_ACTION_KEYWORDS = [
-    "open", "close", "launch", "start", "run", "execute",
-    "vs code", "vscode", "code editor", "editor",
-    "spotify", "music", "play song", "play music",
-    "safari", "browser", "chrome", "firefox",
-    "mail", "email", "send email", "compose",
-    "notes", "notepad", "text editor",
-    "figma", "design", "sketch",
-    "terminal", "command", "shell",
-    "fix", "debug", "code", "program",
-    "order", "buy", "purchase", "shop",
-    "click", "type", "move mouse", "screenshot",
-    "laptop", "mac", "computer",
-]
-
-# Keywords for weather queries
-WEATHER_KEYWORDS = [
-    "weather", "temperature", "forecast", "rain", "snow", "sunny",
-    "cloudy", "wind", "humidity", "degrees", "celsius", "fahrenheit",
-    "hot", "cold", "warm", "cool",
-]
-
-# Keywords for news queries
-NEWS_KEYWORDS = [
-    "news", "headlines", "latest", "recent", "breaking",
-    "article", "story", "report", "update",
-]
-
-# Keywords for search queries
-SEARCH_KEYWORDS = [
-    "search", "find", "look up", "google", "what is", "who is",
-    "where is", "when is", "how to", "tell me about",
-    "information about", "details about",
-]
-
-
-def classify_intent(text: str) -> Tuple[IntentType, float]:
+def classify_intent(
+    text: str, 
+    llm: Optional[object] = None
+) -> Tuple[IntentType, float]:
     """
-    Classify user intent from text.
+    Classify user intent using LLM.
     
     Args:
         text: User's spoken or typed text
+        llm: Optional LLM instance (LlamaInference). If None, defaults to local_qa.
         
     Returns:
         Tuple of (intent_type, confidence)
-        confidence is a simple score (0.0 to 1.0) based on keyword matches
+        confidence is always 1.0 for LLM-based classification
     """
     if not text or not text.strip():
         return "local_qa", 0.0
     
-    text_lower = text.lower()
+    # If no LLM provided, default to local_qa (fallback)
+    if llm is None:
+        logger.warning("No LLM provided for intent classification, defaulting to local_qa")
+        return "local_qa", 0.5
     
-    # Count keyword matches for each intent
-    laptop_score = sum(1 for keyword in LAPTOP_ACTION_KEYWORDS if keyword in text_lower)
-    weather_score = sum(1 for keyword in WEATHER_KEYWORDS if keyword in text_lower)
-    news_score = sum(1 for keyword in NEWS_KEYWORDS if keyword in text_lower)
-    search_score = sum(1 for keyword in SEARCH_KEYWORDS if keyword in text_lower)
-    
-    # Determine intent based on highest score
-    scores = {
-        "laptop_action": laptop_score,
-        "weather": weather_score,
-        "news": news_score,
-        "search": search_score,
-    }
-    
-    max_intent = max(scores.items(), key=lambda x: x[1])
-    
-    # If no strong match, default to local_qa
-    if max_intent[1] == 0:
-        return "local_qa", 0.0
-    
-    # Calculate confidence (normalized score)
-    total_keywords = len(LAPTOP_ACTION_KEYWORDS) + len(WEATHER_KEYWORDS) + len(NEWS_KEYWORDS) + len(SEARCH_KEYWORDS)
-    confidence = min(1.0, max_intent[1] / 3.0)  # Cap at 1.0, normalize by 3
-    
-    return max_intent[0], confidence
+    try:
+        # Use LLM to classify intent
+        response = llm.generate(
+            question=text,
+            system_prompt=INTENT_CLASSIFICATION_PROMPT,
+            max_tokens=10  # Just need one word response
+        )
+        
+        # Clean and normalize response
+        response = response.strip().lower()
+        
+        # Extract intent from response
+        if "laptop_action" in response or "laptop" in response:
+            intent = "laptop_action"
+            confidence = 1.0
+        elif "local_qa" in response or "local" in response:
+            intent = "local_qa"
+            confidence = 1.0
+        else:
+            # Fallback: check for common laptop action indicators
+            laptop_indicators = [
+                "open", "go to", "login", "text", "message", "send", 
+                "click", "type", "navigate", "website", "app", "application"
+            ]
+            if any(indicator in text.lower() for indicator in laptop_indicators):
+                intent = "laptop_action"
+                confidence = 0.8
+            else:
+                intent = "local_qa"
+                confidence = 0.8
+        
+        logger.info(f"LLM classified intent: {intent} (confidence: {confidence:.2f}) for: {text[:50]}")
+        return intent, confidence
+        
+    except Exception as e:
+        logger.error(f"Error during LLM intent classification: {e}")
+        # Fallback to simple heuristic
+        text_lower = text.lower()
+        laptop_indicators = [
+            "open", "go to", "login", "text", "message", "send",
+            "click", "type", "navigate", "website", "app"
+        ]
+        if any(indicator in text_lower for indicator in laptop_indicators):
+            return "laptop_action", 0.7
+        return "local_qa", 0.7
 
 
-def is_laptop_action(text: str) -> bool:
+def is_laptop_action(text: str, llm: Optional[object] = None) -> bool:
     """Quick check if text is a laptop action."""
-    intent, confidence = classify_intent(text)
-    return intent == "laptop_action" and confidence > 0.0
-
+    intent, confidence = classify_intent(text, llm)
+    return intent == "laptop_action" and confidence > 0.5
