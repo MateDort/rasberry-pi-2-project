@@ -184,14 +184,8 @@ The Pi agent uses keyword matching to decide when to delegate to the laptop:
 
 ```python
 # utils/intent_classifier.py
-LAPTOP_ACTION_KEYWORDS = [
-    "open", "close", "launch", "start", "run",
-    "safari", "browser", "chrome",
-    "mail", "email", "send email",
-    "click", "type", "screenshot",
-    "laptop", "mac", "computer",
-    # ... more keywords
-]
+
+
 ```
 
 **Example:**

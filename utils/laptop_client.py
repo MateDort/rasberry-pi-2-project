@@ -25,14 +25,14 @@ logger = logging.getLogger(__name__)
 class LaptopBackendConfig:
     host: str
     port: int
-    timeout_seconds: float = 60.0
+    timeout_seconds: float = 300.0  # 5 minutes - allow complex tasks to complete
 
     @classmethod
     def from_config(cls, config: Dict[str, Any]) -> "LaptopBackendConfig":
         laptop_cfg = config.get("laptop", {}) or {}
         host = str(laptop_cfg.get("host") or "localhost")
         port = int(laptop_cfg.get("port") or 8000)
-        timeout = float(laptop_cfg.get("timeout_seconds") or 60.0)
+        timeout = float(laptop_cfg.get("timeout_seconds") or 300.0)  # Default 5 minutes
         return cls(host=host, port=port, timeout_seconds=timeout)
 
     @property
@@ -64,12 +64,12 @@ def send_laptop_task(
 
     url = f"{backend_cfg.base_url}/pi_task"
     logger.info("Sending laptop task to %s: %s", url, payload)
-    print(f"📤 Sending task to backend (timeout: {backend_cfg.timeout_seconds}s)...")
+    print(f"📤 Sending task to backend (waiting for completion, no timeout)...")
 
     try:
-        # Use a longer timeout with progress indication
-        print(f"   Waiting for response (max {backend_cfg.timeout_seconds}s)...")
-        response = requests.post(url, json=payload, timeout=backend_cfg.timeout_seconds)
+        # Wait indefinitely until task completes (done or failed)
+        print(f"   Waiting for task to complete (no timeout - will wait until done/failed)...")
+        response = requests.post(url, json=payload, timeout=None)
         print(f"✅ Received response from backend: status={response.status_code}, size={len(response.content)} bytes")
     except requests.RequestException as exc:
         logger.error("Failed to reach laptop backend: %s", exc, exc_info=True)
